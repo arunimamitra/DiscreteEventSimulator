@@ -83,7 +83,7 @@ public:
 };
 
 
-
+int maxprio=4;
 
 class Scheduler
 {
@@ -93,7 +93,7 @@ class Scheduler
         virtual void addProcess(Process* process)=0;
         virtual Process* getNextProcess()=0;
 //        virtual void rmProcess()=0;
- //   virtual void print()=0;
+   virtual void print()=0;
 };
 
 
@@ -230,40 +230,96 @@ public:
 };
 
 class PriorityScheduler:public Scheduler{
-public:
-    void addProcess( Process* process){
-        //same as srtf but add process based on who has max priority
-        int j=0;
-        bool check=false;
-        deque<Process *>::iterator ind = readyQueue.begin();
-        while(ind!= readyQueue.end())
-        {
-            j++;
-            Process *p = *ind;
-            if(p->processPrio<process->processPrio)
-            {
-                check=true;
-                break;
-            }
-            ind++;
-        }
-        if(!check) readyQueue.push_back(process);
-        else
-        {
-            deque<Process *>::iterator it = readyQueue.begin();
-            advance(it,j-1);
-            readyQueue.insert(it,process);
-        }
-    }
+ vector<list<Process *> > *active_queue, *expired_queue; // pointers to the queue
+      vector<list<Process *> >  queue1, queue2; // actual queue
+      int num_run, num_exp;
     
- Process * getNextProcess()
-    {
-       if(readyQueue.empty()) return NULL;
-       Process *proc;
-       proc=readyQueue.front();
-       readyQueue.erase(readyQueue.begin());
-       return proc;
-    }
+      public:
+      // initialize the queues and the pointers
+          void initialize()
+          {
+              for(int i=0; i<maxprio; i++)
+              {
+                  queue1.push_back(list<Process *>());
+                  queue2.push_back(list<Process *>());
+              }
+
+              active_queue = &queue1;
+              expired_queue = &queue2;
+              num_run=0;
+              num_exp=0;
+          }
+
+          void addProcess(Process * process)
+          {
+              if(active_queue==NULL)
+                  initialize();
+
+              
+              if(process->currentState.compare("PREMPT")==0)
+              {
+                  process->setProcessPriority(process->getProcessPriority()-1);
+                  cout<<"Entering prempt condition "<<process->getProcessPriority()<<endl;
+              }
+
+              process->currentState="READY";
+
+              if(process->getProcessPriority()<0)
+              {
+                  process->setProcessPriority(process->getStaticPriority()-1);
+                  expired_queue->at(process->getProcessPriority()).push_back(process);
+                  num_exp++;
+              }
+              else
+              {
+//                  cout << "size of active queue" <<active_queue->size()<<endl;
+//                  cout<<"process' priority = "<<process->getProcessPriority()<<endl;
+                  active_queue->at(process->getProcessPriority()).push_back(process);
+                  //cout << "process added" << endl;
+                  num_run++;
+              }
+          }
+
+      //  swaps the pointers
+          void swap()
+          {
+              // cout << "swap called" << endl;
+              vector<list<Process *> > *temp = active_queue;
+              active_queue = expired_queue;
+              expired_queue = temp;
+
+              num_run = num_exp;
+              num_exp = 0;
+          }
+
+          Process * getNextProcess()
+          {
+              if(num_run==0)
+                  swap();
+
+              Process *p = NULL;
+              int queue_num = -1;
+
+              for(int i=0; i<active_queue->size(); i++)
+              {
+                  if(!active_queue->at(i).empty())
+                  {
+                      queue_num=i;
+                  }
+              }
+
+              //cout<<"queue_num = "<<queue_num<<endl;
+              if(queue_num>=0)
+              {
+                  p = active_queue->at(queue_num).front();
+                  active_queue->at(queue_num).pop_front();
+                  num_run--;
+              }
+              
+
+              //if(p==NULL) cout<<"null value of p"<<endl;
+              return p;
+          }
     
     void rmProcess(){
         readyQueue.pop_front();
@@ -276,7 +332,7 @@ public:
         //cout<<readyQueue.size();
         deque<Process*> readyQueue2=readyQueue;
         while(!readyQueue2.empty()) {
-            cout<<readyQueue2.front()<<" hello "<<readyQueue2.front()->getPID();
+            cout<<readyQueue2.front()<<" hello "<<readyQueue2.front()->getPID()<<" priority="<<readyQueue2.front()->getProcessPriority();
             cout<<endl;
             readyQueue2.pop_front();
         }
@@ -466,7 +522,7 @@ EventManager initialize(char* fileName, int maxprio, string sch){
         p.cpuBurst=cb;
         p.IOBurst=ib;
         p.ofsInd=ofs;
-        p.processPrio=processPrio;
+        p.processPrio=processPrio-1;
         p.blockedTotal=0;
         p.cpuBurstRemaining=0;
         p.setTimeOfTransition(0);
@@ -521,26 +577,32 @@ void Simulation(EventManager* em, string sch) {
         switch(transition) { // encodes where we come from and where we go
             case TRANS_TO_READY:
             {
+                evt->printEvent();
                 
                 if(prio){
-                    if(evt->oldState.compare("BLOCK")==0 || proc->getProcessPriority()==0) proc->setProcessPriority(proc->getStaticPriority()-1);
-                    else proc->setProcessPriority(proc->getProcessPriority()-1);
-                    
+                    if(proc->currentState.compare("BLOCK")==0)
+                        proc->setProcessPriority(proc->getStaticPriority()-1);
                 }
-                evt->printEvent();
+                //proc->currentState="READY";
                 scheduler->addProcess(proc);
-                //scheduler->print();
+                scheduler->print();
                 CALL_SCHEDULER=true;
                 break;
             }
             case TRANS_TO_PREEMPT: {
                 Event e;
+                proc->currentState="PREMPT";
                 e.setValues(proc->pid, "RUNNING", "READY", evt->extra, proc, currTime, ofs, currTime, TRANS_TO_READY);
                 em->addEvent(e);
                 CURRENT_RUNNING_PROCESS=NULL;
                 CALL_SCHEDULER = true;
                 break;}
             case TRANS_TO_RUN:{
+//                if(prio){
+//                proc->setProcessPriority(proc->getProcessPriority()-1);
+//                    if(proc->getProcessPriority()==-1) proc->setProcessPriority(proc->getStaticPriority()-1);}
+//
+                proc->currentState="RUN";
                 int remainingWork = proc->getRemainingWorkTime();
                 int cpuBRem=proc->getCPUBurstRemaining();
                 if(cpuBRem==0){ // we can assign new cpu time using rfile
@@ -549,8 +611,6 @@ void Simulation(EventManager* em, string sch) {
                     ofs++;
                     //cout<<"ofs="<<ofs<<endl;
                 }
-                
-                
                 
                 if(remainingWork < cpuBRem){
                     cpuBRem = remainingWork;
@@ -581,6 +641,7 @@ void Simulation(EventManager* em, string sch) {
                 break;
             }
             case TRANS_TO_BLOCK:{
+                proc->currentState="BLOCK";
                 CURRENT_RUNNING_PROCESS=NULL;
                 CALL_SCHEDULER = true;
                 if(proc->getRemainingWorkTime()<=0){
@@ -652,8 +713,8 @@ int main(int argc, const char * argv[]) {
     // insert code here...
     char* str= "/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/rfile";
     createRandomArray(str);
-    char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input4";
-    int maxprio=3;
+    char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input6";
+    maxprio=3;
     prio=true;
     string sch="PRIO";
     quantum=5;
