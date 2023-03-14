@@ -45,6 +45,7 @@ public:
     void setTimeOfTransition( int t){ timeOfTransition = t;}
     void setRemainingWorkTime(int s){ remainingWork = s;} // updating exec time left
     void setStaticPriority(int s){ staticPriority = s;}
+    void setProcessPriority(int p){processPrio=p;}
     void setWaitingTime(int w){ waiting = w;}
     void setBlocked(int b){blockedTotal=b;}
     void setCPUBurstRemaining(int t){ cpuBurstRemaining=t;}
@@ -92,7 +93,7 @@ class Scheduler
         virtual void addProcess(Process* process)=0;
         virtual Process* getNextProcess()=0;
 //        virtual void rmProcess()=0;
-//    virtual void print()=0;
+ //   virtual void print()=0;
 };
 
 
@@ -112,17 +113,12 @@ public:
     //0x00007ffeefbff0b8
  Process * getNextProcess()
     {
-        Process *p;
-        if(!readyQueue.empty())
-        {
-            p = readyQueue.front();
-            readyQueue.erase(readyQueue.begin());
-        }
-        else
-        {
-            return NULL;
-        }
-        return p;
+        if(readyQueue.empty()) return NULL;
+        
+        Process *proc;
+        proc=readyQueue.front();
+        readyQueue.erase(readyQueue.begin());
+        return proc;
     }
     
     void rmProcess(){
@@ -149,12 +145,12 @@ public:
     
  Process * getNextProcess()
     {
-        Process* a;
+        Process* proc;
         if(readyQueue.empty()) return NULL;
         
-        a = readyQueue.back();
+        proc=readyQueue.back();
         readyQueue.erase(readyQueue.end());
-        return a;
+        return proc;
     }
     
     void rmProcess(){
@@ -174,43 +170,35 @@ public:
 class SRTF:public Scheduler{
 public:
     void addProcess( Process* process){
-        int flag = 0;
-        int pos = 0;
+        int j=0;
+        bool check=false;
         for(deque<Process *>::iterator i = readyQueue.begin() ; i!= readyQueue.end(); i++)
         {
-            pos++;
+            j++;
             Process *p = *i;
             if(p->getRemainingWorkTime()> process->getRemainingWorkTime())
             {
-                flag=1;
+                check=true;
                 break;
             }
         }
-        if(flag==0)
-        {
-            readyQueue.push_back(process);
-        }
+        if(!check) readyQueue.push_back(process);
         else
         {
             deque<Process *>::iterator it = readyQueue.begin();
-            advance(it,pos-1);
+            advance(it,j-1);
             readyQueue.insert(it,process);
         }
     }
     
     Process * getNextProcess()
     {
-        Process *p;
-        if(!readyQueue.empty())
-        {
-            p = readyQueue.front();
-            readyQueue.erase(readyQueue.begin());
-        }
-        else
-        {
-            return NULL;
-        }
-        return p;
+        if(readyQueue.empty()) return NULL;
+        Process *proc;
+        proc=readyQueue.front();
+        readyQueue.erase(readyQueue.begin());
+        return proc;
+        
     }
 };
 
@@ -220,28 +208,61 @@ class RR:public Scheduler{
 public:
     void addProcess( Process* process){
         //cout<<"adding process "<<process->pid<<endl;
-       
         readyQueue.push_back(process);
         Process* value;
         value=readyQueue.front();
-        
-        //cout<<"at front of queue, we now have pid "<<value->pid<<endl;
     }
-    
-    //0x00007ffeefbff0b8
  Process * getNextProcess()
     {
-        Process *p;
-        if(!readyQueue.empty())
+       if(readyQueue.empty()) return NULL;
+       Process *proc;
+       proc=readyQueue.front();
+       readyQueue.erase(readyQueue.begin());
+       return proc;
+    }
+    
+    void rmProcess(){
+        readyQueue.pop_front();
+        cout<<readyQueue.size();
+        return;
+    }
+    
+};
+
+class PriorityScheduler:public Scheduler{
+public:
+    void addProcess( Process* process){
+        //same as srtf but add process based on who has max priority
+        int j=0;
+        bool check=false;
+        deque<Process *>::iterator ind = readyQueue.begin();
+        while(ind!= readyQueue.end())
         {
-            p = readyQueue.front();
-            readyQueue.erase(readyQueue.begin());
+            j++;
+            Process *p = *ind;
+            if(p->processPrio<process->processPrio)
+            {
+                check=true;
+                break;
+            }
+            ind++;
         }
+        if(!check) readyQueue.push_back(process);
         else
         {
-            return NULL;
+            deque<Process *>::iterator it = readyQueue.begin();
+            advance(it,j-1);
+            readyQueue.insert(it,process);
         }
-        return p;
+    }
+    
+ Process * getNextProcess()
+    {
+       if(readyQueue.empty()) return NULL;
+       Process *proc;
+       proc=readyQueue.front();
+       readyQueue.erase(readyQueue.begin());
+       return proc;
     }
     
     void rmProcess(){
@@ -254,12 +275,13 @@ public:
     void print(){
         //cout<<readyQueue.size();
         deque<Process*> readyQueue2=readyQueue;
-        cout<<readyQueue2.front()<<" hello "<<readyQueue2.front()->getPID();
-        cout<<endl;
+        while(!readyQueue2.empty()) {
+            cout<<readyQueue2.front()<<" hello "<<readyQueue2.front()->getPID();
+            cout<<endl;
+            readyQueue2.pop_front();
+        }
     }
 };
-
-
 
 
 
@@ -449,7 +471,7 @@ EventManager initialize(char* fileName, int maxprio, string sch){
         p.cpuBurstRemaining=0;
         p.setTimeOfTransition(0);
         p.currentState = "CREATE";
-        p.staticPriority=createdProcesses.size();
+        p.staticPriority=processPrio;
         
 //        Event e;
 //        e.setValues(p.pid, "CREATED", "READY", "",p,0,ofs, arrival, TRANS_TO_READY);
@@ -476,16 +498,17 @@ EventManager initialize(char* fileName, int maxprio, string sch){
 
 Scheduler * scheduler;
 
-
+bool prio=false;
 
 void Simulation(EventManager* em, string sch) {
     cout<<sch<<endl;
     int currTime;
     bool CALL_SCHEDULER=false;
+    //prio=true;
     list<Event> eventQueue=em->eventQueue;
 
     Process* CURRENT_RUNNING_PROCESS=NULL;
-    int ind=1, cpuTime=0;
+    //int ind=1, cpuTime=0;
     
     while(em->eventQueue.size()!=0) {
         //cout<<"iteration "<<ind<<endl;
@@ -498,8 +521,15 @@ void Simulation(EventManager* em, string sch) {
         switch(transition) { // encodes where we come from and where we go
             case TRANS_TO_READY:
             {
-                //evt->printEvent();
+                
+                if(prio){
+                    if(evt->oldState.compare("BLOCK")==0 || proc->getProcessPriority()==0) proc->setProcessPriority(proc->getStaticPriority()-1);
+                    else proc->setProcessPriority(proc->getProcessPriority()-1);
+                    
+                }
+                evt->printEvent();
                 scheduler->addProcess(proc);
+                //scheduler->print();
                 CALL_SCHEDULER=true;
                 break;
             }
@@ -519,24 +549,27 @@ void Simulation(EventManager* em, string sch) {
                     ofs++;
                     //cout<<"ofs="<<ofs<<endl;
                 }
-                evt->extra = "\t cb="+to_string(cpuBRem)+"\trem="+to_string(remainingWork);
-                //evt->printEvent();
+                
+                
                 
                 if(remainingWork < cpuBRem){
                     cpuBRem = remainingWork;
                 }
-                
+                evt->extra = "\t cb="+to_string(cpuBRem)+"\trem="+to_string(remainingWork)+"\tprio="+to_string(proc->processPrio);
+
+                evt->printEvent();
                 Event e;
                 if(quantum >= cpuBRem) {
                     proc->setRemainingWorkTime(remainingWork-cpuBRem);
-                    e.setValues(proc->pid, "RUNNING", "BLOCK", "", proc, currTime, ofs, currTime+cpuBRem, TRANS_TO_BLOCK);
                     proc->setCPUBurstRemaining(0);
+                    e.setValues(proc->pid, "RUNNING", "BLOCK", "", proc, currTime, ofs, currTime+cpuBRem, TRANS_TO_BLOCK);
                     CURRENT_RUNNING_PROCESS = proc;
                 }
                 else{
                     proc->setRemainingWorkTime(remainingWork-quantum);
+                    remainingWork = proc->getRemainingWorkTime();
                     cpuBRem=cpuBRem-quantum;
-                    e.setValues(proc->pid, "RUNNING", "READY", "\t cb="+to_string(cpuBRem)+"\trem="+to_string(remainingWork), proc, currTime, ofs, currTime+quantum, TRANS_TO_PREEMPT);
+                    e.setValues(proc->pid, "RUNNING", "READY", "\t cb="+to_string(cpuBRem)+"\trem="+to_string(remainingWork)+"\tprio="+to_string(proc->processPrio), proc, currTime, ofs, currTime+quantum, TRANS_TO_PREEMPT);
                     proc->setCPUBurstRemaining(cpuBRem);
                     CURRENT_RUNNING_PROCESS = proc;
                 }
@@ -556,16 +589,15 @@ void Simulation(EventManager* em, string sch) {
                     break;
                 }
                 int ioWait = myrandom(proc->getIOBurst());
-                evt->extra = "\t ib="+to_string(ioWait)+"\trem="+to_string(proc->remainingWork);
+                evt->extra = "\t ib="+to_string(ioWait)+"\trem="+to_string(proc->remainingWork)+"\tprio="+to_string(proc->processPrio);
                 proc->setBlocked(proc->getBlocked()+ioWait);
-                //evt->printEvent();
+                evt->printEvent();
                 ofs++;
                 //cout<<"ofs="<<ofs<<endl;
                 
                 Event e;
                 e.setValues(proc->pid, "BLOCK", "READY", "",
                             proc, currTime, ofs, currTime+ioWait, TRANS_TO_READY);
-                //e.printEvent();
                 em->addEvent(e);
                 if(timestampOfBlocked==-1 || currTime>timestampOfBlocked){  // first process to go into blocked or currtime is more than last blocked process time
                     timeInBlocked+= ioWait;
@@ -620,12 +652,13 @@ int main(int argc, const char * argv[]) {
     // insert code here...
     char* str= "/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/rfile";
     createRandomArray(str);
-    char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input6";
-    int maxprio=4;
-    string sch="RR";
+    char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input4";
+    int maxprio=3;
+    prio=true;
+    string sch="PRIO";
     quantum=5;
     EventManager evm = initialize(str2,maxprio, sch);
-    scheduler = new RR();
+    scheduler = new PriorityScheduler();
     
     
 
