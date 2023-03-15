@@ -230,96 +230,67 @@ public:
 };
 
 class PriorityScheduler:public Scheduler{
- vector<list<Process *> > *active_queue, *expired_queue; // pointers to the queue
-      vector<list<Process *> >  queue1, queue2; // actual queue
-      int num_run, num_exp;
-    
-      public:
-      // initialize the queues and the pointers
-          void initialize()
-          {
-              for(int i=0; i<maxprio; i++)
-              {
-                  queue1.push_back(list<Process *>());
-                  queue2.push_back(list<Process *>());
-              }
+    vector<list<Process*> > *activeQ, *expiredQ, q1,q2;
+    public:
+    void initialize()
+    {
+        for(int i=0; i<maxprio; i++)
+        {
+            q1.push_back(list<Process *>());
+            q2.push_back(list<Process *>());
+        }
+        activeQ = &q1;
+        expiredQ = &q2;
+        
+    }
+    void addProcess(Process * process)
+    {
+        if(activeQ==NULL) initialize();
+        if(process->currentState.compare("PREMPT")==0)
+        {
+            process->setProcessPriority(process->getProcessPriority()-1);
+            cout<<"Entering prempt condition "<<process->getProcessPriority()<<endl;
+            
+        }
+        process->currentState="READY";
+        if(process->getProcessPriority()<0){
+            process->setProcessPriority(process->getStaticPriority()-1);
+            expiredQ->at(process->getProcessPriority()).push_back(process);
+        }
+        else{
+//          cout << "size of active queue" <<active_queue->size()<<endl;
+//          cout<<"process' priority = "<<process->getProcessPriority()<<endl;
+            activeQ->at(process->getProcessPriority()).push_back(process);
+        }
+    }
+    Process * getNextProcess()
+    {
+        bool anyActiveProc=false;
+        for(int i=0;i<activeQ->size();i++){
+            if(activeQ->at(i).size()!=0){
+                anyActiveProc=true;
+                break;
+            }
+        }
+        if(!anyActiveProc){
+            vector<list<Process*> > *temp = activeQ;
+            activeQ = expiredQ;
+            expiredQ = temp;
+        }
+        int ind = -1;
+        for(int i=activeQ->size()-1;i>=0;i--){
+            if(activeQ->at(i).empty()==false){
+                ind=i;
+                break;
+            }
+        }
 
-              active_queue = &queue1;
-              expired_queue = &queue2;
-              num_run=0;
-              num_exp=0;
-          }
-
-          void addProcess(Process * process)
-          {
-              if(active_queue==NULL)
-                  initialize();
-
-              
-              if(process->currentState.compare("PREMPT")==0)
-              {
-                  process->setProcessPriority(process->getProcessPriority()-1);
-                  cout<<"Entering prempt condition "<<process->getProcessPriority()<<endl;
-              }
-
-              process->currentState="READY";
-
-              if(process->getProcessPriority()<0)
-              {
-                  process->setProcessPriority(process->getStaticPriority()-1);
-                  expired_queue->at(process->getProcessPriority()).push_back(process);
-                  num_exp++;
-              }
-              else
-              {
-//                  cout << "size of active queue" <<active_queue->size()<<endl;
-//                  cout<<"process' priority = "<<process->getProcessPriority()<<endl;
-                  active_queue->at(process->getProcessPriority()).push_back(process);
-                  //cout << "process added" << endl;
-                  num_run++;
-              }
-          }
-
-      //  swaps the pointers
-          void swap()
-          {
-              // cout << "swap called" << endl;
-              vector<list<Process *> > *temp = active_queue;
-              active_queue = expired_queue;
-              expired_queue = temp;
-
-              num_run = num_exp;
-              num_exp = 0;
-          }
-
-          Process * getNextProcess()
-          {
-              if(num_run==0)
-                  swap();
-
-              Process *p = NULL;
-              int queue_num = -1;
-
-              for(int i=0; i<active_queue->size(); i++)
-              {
-                  if(!active_queue->at(i).empty())
-                  {
-                      queue_num=i;
-                  }
-              }
-
-              //cout<<"queue_num = "<<queue_num<<endl;
-              if(queue_num>=0)
-              {
-                  p = active_queue->at(queue_num).front();
-                  active_queue->at(queue_num).pop_front();
-                  num_run--;
-              }
-              
-
-              //if(p==NULL) cout<<"null value of p"<<endl;
-              return p;
-          }
+        if(ind==-1) return NULL;
+        Process *proc;
+        proc = activeQ->at(ind).front();
+        activeQ->at(ind).pop_front();
+        return proc;
+    }
     
     void rmProcess(){
         readyQueue.pop_front();
@@ -437,7 +408,7 @@ void printOutput(){
 
 
 int ofs=0;
-int quantum=40000; //ofs<40000 (size of rfile provided)
+int quantum=10; //ofs<40000 (size of rfile provided)
 ifstream file;
 
 
@@ -457,11 +428,11 @@ void createRandomArray(char* fileName){
     while(rfile >> size)
         randomValues.push_back(size);
     randomValues.erase(randomValues.begin());
-    cout<<randomValues.size()<<endl;
+    //cout<<randomValues.size()<<endl;
+    quantum = randomValues.size(); // default value of quantum
 }
 
 int myrandom(int burst) { return 1 + (randomValues.at(ofs) % burst); }
-
 
 
 
@@ -713,7 +684,7 @@ int main(int argc, const char * argv[]) {
     // insert code here...
     char* str= "/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/rfile";
     createRandomArray(str);
-    char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input6";
+    char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input4";
     maxprio=3;
     prio=true;
     string sch="PRIO";
