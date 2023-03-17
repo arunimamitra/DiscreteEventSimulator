@@ -78,7 +78,8 @@ public:
 //            cout<<processStartTime<<"\t"<<pid<<"\t"<<prev<<"\t"<<oldState<<"->"<<newState<<"\t"<<extra<<endl;
 //        else cout<<timestamp<<"\t"<<pid<<"\t"<<prev<<"\t"<<oldState<<"->"<<newState<<"\t"<<extra<<endl;
 //
-        cout<<eventTimestamp<<"\t"<<pid<<"\t"<<process->getTimeOfTransition()<<"\t"<<oldState<<"->"<<newState<<"\t"<<extra<<endl;
+        
+        cout<<eventTimestamp<<"\t"<<pid<<"\t"<<oldState<<"->"<<newState<<"\t"<<extra<<endl;
     }
 };
 
@@ -102,7 +103,7 @@ class FCFS:public Scheduler{
 public:
     void addProcess( Process* process){
         //cout<<"adding process "<<process->pid<<endl;
-       
+        process->currentState="READY";
         readyQueue.push_back(process);
         Process* value;
         value=readyQueue.front();
@@ -140,6 +141,7 @@ public:
 class LCFS:public Scheduler{
 public:
     void addProcess( Process* process){
+        process->currentState="READY";
         readyQueue.push_back(process);
     }
     
@@ -182,6 +184,7 @@ public:
                 break;
             }
         }
+        process->currentState="READY";
         if(!check) readyQueue.push_back(process);
         else
         {
@@ -208,6 +211,7 @@ class RR:public Scheduler{
 public:
     void addProcess( Process* process){
         //cout<<"adding process "<<process->pid<<endl;
+        process->currentState="READY";
         readyQueue.push_back(process);
         Process* value;
         value=readyQueue.front();
@@ -246,10 +250,10 @@ class PriorityScheduler:public Scheduler{
     void addProcess(Process * process)
     {
         if(activeQ==NULL) initialize();
-        if(process->currentState.compare("PREMPT")==0)
+        if(process->currentState.compare("PREEMPT")==0)
         {
             process->setProcessPriority(process->getProcessPriority()-1);
-            cout<<"Entering prempt condition "<<process->getProcessPriority()<<endl;
+            cout<<"Entering preempt condition "<<process->getProcessPriority()<<endl;
             
         }
         process->currentState="READY";
@@ -311,6 +315,86 @@ class PriorityScheduler:public Scheduler{
 };
 
 
+class PreemptivePriority:public Scheduler{
+    vector<list<Process*> > *activeQ, *expiredQ, q1,q2;
+    public:
+    void initialize()
+    {
+        for(int i=0; i<maxprio; i++)
+        {
+            q1.push_back(list<Process *>());
+            q2.push_back(list<Process *>());
+        }
+        activeQ = &q1;
+        expiredQ = &q2;
+        
+    }
+    void addProcess(Process * process)
+    {
+        if(activeQ==NULL) initialize();
+        if(process->currentState.compare("PREEMPT")==0)
+        {
+            process->setProcessPriority(process->getProcessPriority()-1);
+            //cout<<"Entering prempt condition "<<process->getProcessPriority()<<endl;
+            
+        }
+        process->currentState="READY";
+        if(process->getProcessPriority()<0){
+            process->setProcessPriority(process->getStaticPriority()-1);
+            expiredQ->at(process->getProcessPriority()).push_back(process);
+        }
+        else{
+//          cout << "size of active queue" <<active_queue->size()<<endl;
+//          cout<<"process' priority = "<<process->getProcessPriority()<<endl;
+            activeQ->at(process->getProcessPriority()).push_back(process);
+        }
+    }
+    Process * getNextProcess()
+    {
+        bool anyActiveProc=false;
+        for(int i=0;i<activeQ->size();i++){
+            if(activeQ->at(i).size()!=0){
+                anyActiveProc=true;
+                break;
+            }
+        }
+        if(!anyActiveProc){
+            vector<list<Process*> > *temp = activeQ;
+            activeQ = expiredQ;
+            expiredQ = temp;
+        }
+        int ind = -1;
+        for(int i=activeQ->size()-1;i>=0;i--){
+            if(activeQ->at(i).empty()==false){
+                ind=i;
+                break;
+            }
+        }
+
+        if(ind==-1) return NULL;
+        Process *proc;
+        proc = activeQ->at(ind).front();
+        activeQ->at(ind).pop_front();
+        return proc;
+    }
+    
+    void rmProcess(){
+        readyQueue.pop_front();
+        cout<<readyQueue.size();
+        return;
+    }
+    
+    
+    void print(){
+        //cout<<readyQueue.size();
+        deque<Process*> readyQueue2=readyQueue;
+        while(!readyQueue2.empty()) {
+            cout<<readyQueue2.front()<<" hello "<<readyQueue2.front()->getPID()<<" priority="<<readyQueue2.front()->getProcessPriority();
+            cout<<endl;
+            readyQueue2.pop_front();
+        }
+    }
+};
 
 
 
@@ -467,6 +551,29 @@ public:
         return eventQueue.front().eventTimestamp;
     }
     
+    void removeEventsPreemption(Process * p){
+        int ind=0;
+        bool check=false;
+        list<Event>::iterator i=eventQueue.begin();
+        while(i!=eventQueue.end()){
+            
+            ind++;
+            Event e = *i;
+            if(e.process==p){
+                check=true;
+                break;
+            }
+            i++;
+        }
+
+        if(check)
+        {
+            list<Event>::iterator it = eventQueue.begin();
+            advance(it,ind-1);
+            eventQueue.erase(it);
+        }
+    }
+    
 };
 
 EventManager initialize(char* fileName, int maxprio, string sch){
@@ -525,22 +632,25 @@ EventManager initialize(char* fileName, int maxprio, string sch){
 
 Scheduler * scheduler;
 
-bool prio=false;
+bool prio=false, preprio=false;
 
 void Simulation(EventManager* em, string sch) {
-    cout<<sch<<endl;
+    cout<<sch<<"\t"<<endl;
     int currTime;
     bool CALL_SCHEDULER=false;
+    
     //prio=true;
     list<Event> eventQueue=em->eventQueue;
 
     Process* CURRENT_RUNNING_PROCESS=NULL;
     //int ind=1, cpuTime=0;
     
+    
     while(em->eventQueue.size()!=0) {
         //cout<<"iteration "<<ind<<endl;
         //ind++;
         Event* evt = em->getEvent();
+        
         Process* proc = evt->process ; // this is the process the event works on
         
         currTime = evt->eventTimestamp;
@@ -550,19 +660,48 @@ void Simulation(EventManager* em, string sch) {
             {
                 evt->printEvent();
                 
-                if(prio){
+                if(preprio){
                     if(proc->currentState.compare("BLOCK")==0)
                         proc->setProcessPriority(proc->getStaticPriority()-1);
                 }
-                //proc->currentState="READY";
+                
+                if(preprio && CURRENT_RUNNING_PROCESS!=NULL){
+                    //check here if process can be preempted or not
+                    cout<<"PrioPreempt : ";
+                    if(proc->currentState.compare("BLOCK")==0 || proc->currentState.compare("CREATE")==0){
+                        cout<<"cond1 : yes";
+                    int currentRunningPriority = CURRENT_RUNNING_PROCESS->getProcessPriority();
+                    int readyProcessPriority = proc->getProcessPriority();
+                    int evtTimestamp;
+                        
+                    for(list<Event>::iterator i=em->eventQueue.begin();i!=em->eventQueue.end();i++ ){
+                        Event e2=*i;
+                        if(e2.process==CURRENT_RUNNING_PROCESS) evtTimestamp = e2.eventTimestamp;
+                    }
+                        
+                    if(currentRunningPriority<readyProcessPriority && currTime<evtTimestamp){ //preempt running process and delete events from event manager queue
+                        cout<<"cond2 : YES ";
+                        
+                            em->removeEventsPreemption(CURRENT_RUNNING_PROCESS);
+                        CURRENT_RUNNING_PROCESS->setCPUBurstRemaining(CURRENT_RUNNING_PROCESS->cpuBurstRemaining+evtTimestamp-currTime);
+                        CURRENT_RUNNING_PROCESS->setRemainingWorkTime(CURRENT_RUNNING_PROCESS->getRemainingWorkTime()+evtTimestamp-currTime);
+                            Event e;
+                        
+                            e.setValues(CURRENT_RUNNING_PROCESS->getPID(), "RUNNING", "READY", "", CURRENT_RUNNING_PROCESS, 0, ofs, currTime, TRANS_TO_PREEMPT);
+                            em->addEvent(e);
+                        }
+                        
+                    }
+                    cout<<endl;
+                }
                 scheduler->addProcess(proc);
-                scheduler->print();
+                //scheduler->print();
                 CALL_SCHEDULER=true;
                 break;
             }
             case TRANS_TO_PREEMPT: {
                 Event e;
-                proc->currentState="PREMPT";
+                proc->currentState="PREEMPT";
                 e.setValues(proc->pid, "RUNNING", "READY", evt->extra, proc, currTime, ofs, currTime, TRANS_TO_READY);
                 em->addEvent(e);
                 CURRENT_RUNNING_PROCESS=NULL;
@@ -605,8 +744,7 @@ void Simulation(EventManager* em, string sch) {
                     CURRENT_RUNNING_PROCESS = proc;
                 }
                 
-                
-                
+
                 em->addEvent(e);
                 CALL_SCHEDULER = false;
                 break;
@@ -684,13 +822,13 @@ int main(int argc, const char * argv[]) {
     // insert code here...
     char* str= "/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/rfile";
     createRandomArray(str);
-    char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input4";
-    maxprio=3;
-    prio=true;
-    string sch="PRIO";
-    quantum=5;
+    char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input6";
+    maxprio=5;
+    preprio=true;
+    string sch="PREPRIO";
+    quantum=2;
     EventManager evm = initialize(str2,maxprio, sch);
-    scheduler = new PriorityScheduler();
+    scheduler = new PreemptivePriority();
     
     
 
