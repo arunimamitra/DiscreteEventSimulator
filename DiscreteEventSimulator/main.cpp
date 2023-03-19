@@ -14,11 +14,13 @@
 #include <map>
 #include <vector>
 #include <list>
+#include<getopt.h>
 
 
 using namespace std;
 
 enum transitionNextState {TRANS_TO_READY, TRANS_TO_BLOCK, TRANS_TO_RUN, TRANS_TO_PREEMPT};
+bool isVerboseModeRequired=false;
 
 class Process{
 public:
@@ -94,7 +96,7 @@ class Scheduler
         virtual void addProcess(Process* process)=0;
         virtual Process* getNextProcess()=0;
 //        virtual void rmProcess()=0;
-   virtual void print()=0;
+   //virtual void print()=0;
 };
 
 
@@ -253,7 +255,7 @@ class PriorityScheduler:public Scheduler{
         if(process->currentState.compare("PREEMPT")==0)
         {
             process->setProcessPriority(process->getProcessPriority()-1);
-            cout<<"Entering preempt condition "<<process->getProcessPriority()<<endl;
+            if(isVerboseModeRequired) cout<<"Entering preempt condition "<<process->getProcessPriority()<<endl;
             
         }
         process->currentState="READY";
@@ -307,7 +309,7 @@ class PriorityScheduler:public Scheduler{
         //cout<<readyQueue.size();
         deque<Process*> readyQueue2=readyQueue;
         while(!readyQueue2.empty()) {
-            cout<<readyQueue2.front()<<" hello "<<readyQueue2.front()->getPID()<<" priority="<<readyQueue2.front()->getProcessPriority();
+            cout<<readyQueue2.front()<<" front val= "<<readyQueue2.front()->getPID()<<" priority="<<readyQueue2.front()->getProcessPriority();
             cout<<endl;
             readyQueue2.pop_front();
         }
@@ -459,7 +461,7 @@ void mappingOutput(int timestamp, Process * proc){
     else str="000";
     
     
-    string value = str+to_string(pid)+":\t"+to_string(procArrival)+"\t"+to_string(proc->getExecutionTime())+"\t"+to_string(proc->getCPUBurst())+"\t"+to_string(proc->getIOBurst())+"\t"+to_string(proc->getProcessPriority())+"\t|\t"+to_string(procFinishingTime)+"\t"+to_string(turnaround)+"\t"+to_string(blockedTime)+"\t"+to_string(timeInReadyQueue);
+    string value = str+to_string(pid)+":\t"+to_string(procArrival)+"\t"+to_string(proc->getExecutionTime())+"\t"+to_string(proc->getCPUBurst())+"\t"+to_string(proc->getIOBurst())+"\t"+to_string(proc->getStaticPriority())+"\t|\t"+to_string(procFinishingTime)+"\t"+to_string(turnaround)+"\t"+to_string(blockedTime)+"\t"+to_string(timeInReadyQueue);
     
     
     
@@ -484,9 +486,9 @@ void printOutput(){
     summary[3]=summary[3]/mapper.size();
     summary[4] = summary[4]/mapper.size();
     summary[5] =(100*mapper.size())/summary[0];
-    cout<<"SUM:\t"<<summary[0];
-     cout<<setprecision(2)<<fixed<<"\t"<<summary[1]<<"\t";
-     cout<<setprecision(2)<<summary[2]<<"\t"<<setprecision(2)<<summary[3]<<"\t"<<setprecision(2)<<fixed<<summary[4]<<"\t"<<setprecision(3)<<summary[5]<<endl;
+    cout<<"SUM: "<<summary[0];
+     cout<<setprecision(2)<<fixed<<" "<<summary[1]<<" ";
+     cout<<setprecision(2)<<summary[2]<<" "<<setprecision(2)<<summary[3]<<" "<<setprecision(2)<<fixed<<summary[4]<<" "<<setprecision(3)<<summary[5]<<endl;
     
 }
 
@@ -500,7 +502,7 @@ priority_queue<Event, vector<Event>, FirstCome> eventQueueFCFS;
 priority_queue<Event, vector<Event>, LastCome> eventQueueLCFS;
 
 
-void createRandomArray(char* fileName){
+void createRandomArray(char* fileName, bool quantumSet){
     ifstream rfile;
     rfile.open(fileName);
     
@@ -513,11 +515,11 @@ void createRandomArray(char* fileName){
         randomValues.push_back(size);
     randomValues.erase(randomValues.begin());
     //cout<<randomValues.size()<<endl;
-    quantum = randomValues.size(); // default value of quantum
+    if(!quantumSet) quantum = randomValues.size(); // default value of quantum
 }
 
-int myrandom(int burst) { return 1 + (randomValues.at(ofs) % burst); }
-
+int myrandom(int burst) {
+    return 1 + (randomValues.at(ofs%randomValues.size()) % burst); }
 
 
 
@@ -616,7 +618,7 @@ EventManager initialize(char* fileName, int maxprio, string sch){
     }
     
     EventManager evm;
-    cout<<"createdProcess.size() = "<<createdProcesses.size()<<endl;
+    if(isVerboseModeRequired) cout<<"createdProcess.size() = "<<createdProcesses.size()<<endl;
     
     for(int i=0; i<createdProcesses.size();i++)
     {
@@ -658,18 +660,18 @@ void Simulation(EventManager* em, string sch) {
         switch(transition) { // encodes where we come from and where we go
             case TRANS_TO_READY:
             {
-                evt->printEvent();
+                if(isVerboseModeRequired) evt->printEvent();
                 
-                if(preprio){
+                if(prio || preprio){
                     if(proc->currentState.compare("BLOCK")==0)
                         proc->setProcessPriority(proc->getStaticPriority()-1);
                 }
                 
                 if(preprio && CURRENT_RUNNING_PROCESS!=NULL){
                     //check here if process can be preempted or not
-                    cout<<"PrioPreempt : ";
+                    //cout<<"PrioPreempt : ";
                     if(proc->currentState.compare("BLOCK")==0 || proc->currentState.compare("CREATE")==0){
-                        cout<<"cond1 : yes";
+                        //cout<<"cond1 : yes";
                     int currentRunningPriority = CURRENT_RUNNING_PROCESS->getProcessPriority();
                     int readyProcessPriority = proc->getProcessPriority();
                     int evtTimestamp;
@@ -680,7 +682,7 @@ void Simulation(EventManager* em, string sch) {
                     }
                         
                     if(currentRunningPriority<readyProcessPriority && currTime<evtTimestamp){ //preempt running process and delete events from event manager queue
-                        cout<<"cond2 : YES ";
+                        //cout<<"cond2 : YES ";
                         
                             em->removeEventsPreemption(CURRENT_RUNNING_PROCESS);
                         CURRENT_RUNNING_PROCESS->setCPUBurstRemaining(CURRENT_RUNNING_PROCESS->cpuBurstRemaining+evtTimestamp-currTime);
@@ -727,7 +729,7 @@ void Simulation(EventManager* em, string sch) {
                 }
                 evt->extra = "\t cb="+to_string(cpuBRem)+"\trem="+to_string(remainingWork)+"\tprio="+to_string(proc->processPrio);
 
-                evt->printEvent();
+                if(isVerboseModeRequired) evt->printEvent();
                 Event e;
                 if(quantum >= cpuBRem) {
                     proc->setRemainingWorkTime(remainingWork-cpuBRem);
@@ -754,14 +756,14 @@ void Simulation(EventManager* em, string sch) {
                 CURRENT_RUNNING_PROCESS=NULL;
                 CALL_SCHEDULER = true;
                 if(proc->getRemainingWorkTime()<=0){
-                    cout<<currTime<<"\t"<<proc->getPID()<<"\tDone"<<endl;
+                    if(isVerboseModeRequired) cout<<currTime<<"\t"<<proc->getPID()<<"\tDone"<<endl;
                     mappingOutput(currTime, proc);
                     break;
                 }
                 int ioWait = myrandom(proc->getIOBurst());
                 evt->extra = "\t ib="+to_string(ioWait)+"\trem="+to_string(proc->remainingWork)+"\tprio="+to_string(proc->processPrio);
                 proc->setBlocked(proc->getBlocked()+ioWait);
-                evt->printEvent();
+                if(isVerboseModeRequired) evt->printEvent();
                 ofs++;
                 //cout<<"ofs="<<ofs<<endl;
                 
@@ -809,26 +811,77 @@ void Simulation(EventManager* em, string sch) {
                 Event e;
                     e.setValues(CURRENT_RUNNING_PROCESS->getPID(), "READY", "RUNNING", "", CURRENT_RUNNING_PROCESS, ofs, ofs, currTime, TRANS_TO_RUN);
                     em->addEvent(e);
-                
             }
         }
-        
     }
-    
     printOutput();
 }
 
-int main(int argc, const char * argv[]) {
+int main(int argc, char *argv[]) {
     // insert code here...
-    char* str= "/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/rfile";
-    createRandomArray(str);
-    char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input6";
-    maxprio=5;
-    preprio=true;
-    string sch="PREPRIO";
-    quantum=2;
-    EventManager evm = initialize(str2,maxprio, sch);
-    scheduler = new PreemptivePriority();
+    int option;
+    string sch;
+    bool isQuantumSet=false;
+    
+    EventManager evm;
+    while((option = getopt (argc, argv, "pvets:")) != -1){
+        switch(option){
+            case 'v':{isVerboseModeRequired=true;break;}
+            case 's':{if(optarg!=NULL){
+                switch(optarg[0]){
+                    case 'F':{ //cout<<"entered F"<<endl;
+                        sch="FCFS";scheduler=new FCFS(); break;}
+                    case 'L':{sch="LCFS"; scheduler=new LCFS(); break;}
+                    case 'S':{sch="SRTF"; scheduler=new SRTF(); break;}
+                    case 'R':{scheduler=new RR();
+                            char cc;
+                            isQuantumSet=true;
+                            sscanf(optarg,"%c%d",&cc,&quantum);
+                            sch="RR "+to_string(quantum); break;}
+                    case 'P':{scheduler=new PriorityScheduler();
+                            prio=true;
+                            isQuantumSet=true;
+                            char cc;
+                            sscanf(optarg,"%c%d:%d",&cc,&quantum,&maxprio);
+                            sch="PRIO "+to_string(quantum); break;}
+                    case 'E':{scheduler=new PreemptivePriority();
+                            preprio=true;
+                            isQuantumSet=true;
+                            char cc;
+                            sscanf(optarg,"%c%d:%d",&cc,&quantum,&maxprio);
+                            sch="PREPRIO "+to_string(quantum); break;}
+                    default: {cout<<"Enter scheduler name correctly!! Exitting application."; exit(0);}
+                    }
+                    break;
+                }
+            }
+            case '?': if(optopt == 's')
+                cout<<"Need arguments entered correctly";
+                exit(0);
+                break;
+            default:break;
+        }
+    }
+    char* rfile = argv[argc-1];
+    createRandomArray(rfile, isQuantumSet);
+    char* inputFile = argv[optind];
+    evm = initialize(inputFile,maxprio, sch);
+         // printf("filename %s\n", filename);
+    
+         // printf("randfile %s\n", random_f);
+
+    //cout<<rfile;
+    //char* rfile= "/Users/arunimamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/rfile";
+    
+    //char* inputFile=*argv[n-2];
+    //cout<<inputFile;
+    //char* str2="/Users/asmitamitra/Desktop/Spring2023/OS/Lab2/lab2_assign/input6";
+
+//    preprio=true;
+//    string sch="PREPRIO";
+//    quantum=2;
+    
+    //scheduler = new PreemptivePriority();
     
     
 
@@ -839,4 +892,5 @@ int main(int argc, const char * argv[]) {
     
     return 0;
 }
+
 
